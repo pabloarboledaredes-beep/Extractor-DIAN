@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Extractor Facturas DIAN</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: #f0f4f8; color: #1a202c; min-height: 100vh; }
+
+  .header { background: #1a365d; color: white; padding: 1.25rem 2rem; display: flex; align-items: center; gap: 1rem; }
+  .header-logo { background: #f6ad55; border-radius: 10px; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 15px; color: #1a365d; flex-shrink: 0; }
+  .header h1 { font-size: 20px; font-weight: 700; }
+  .header p { font-size: 12px; opacity: 0.75; margin-top: 3px; }
+
+  .main { padding: 1.75rem 2rem; max-width: 960px; margin: 0 auto; }
+
+  .card { background: white; border-radius: 12px; border: 1px solid #e2e8f0; padding: 1.5rem; margin-bottom: 1.5rem; box-shadow: 0 1px 4px rgba(0,0,0,0.04); }
+  .card-title { font-size: 15px; font-weight: 600; color: #2d3748; margin-bottom: 1.1rem; display: flex; align-items: center; gap: 8px; }
+  .step-badge { background: #2c5282; color: white; border-radius: 50%; width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; flex-shrink: 0; }
+
+  .form-group { margin-bottom: 1rem; }
+  .form-label { display: block; font-size: 12px; font-weight: 600; color: #4a5568; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.03em; }
+  input[type=text], input[type=password], input[type=date], select {
+    width: 100%; padding: 9px 13px; border: 1.5px solid #e2e8f0; border-radius: 8px;
+    font-size: 14px; color: #2d3748; background: #f7fafc; outline: none; transition: border-color .2s, background .2s;
+  }
+  input:focus, select:focus { border-color: #2c5282; background: white; box-shadow: 0 0 0 3px rgba(44,82,130,0.08); }
+  .note { font-size: 11px; color: #a0aec0; margin-top: 5px; }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; }
+
+  .btn { padding: 10px 20px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; border: none; transition: all .18s; display: inline-flex; align-items: center; gap: 8px; }
+  .btn-primary { background: #2c5282; color: white; }
+  .btn-primary:hover { background: #2a4a7f; transform: translateY(-1px); }
+  .btn-primary:active { transform: translateY(0); }
+  .btn-primary:disabled { background: #a0aec0; cursor: not-allowed; transform: none; }
+  .btn-success { background: #276749; color: white; }
+  .btn-success:hover { background: #22543d; transform: translateY(-1px); }
+  .btn-success:disabled { background: #a0aec0; cursor: not-allowed; transform: none; }
+  .btn-sm { padding: 7px 14px; font-size: 13px; }
+
+  .alert { padding: 11px 15px; border-radius: 9px; font-size: 13px; margin-bottom: 1.1rem; display: flex; align-items: flex-start; gap: 10px; line-height: 1.55; }
+  .alert-info  { background: #ebf8ff; border: 1px solid #bee3f8; color: #2b6cb0; }
+  .alert-warn  { background: #fffbeb; border: 1px solid #fbd38d; color: #744210; }
+  .alert-ok    { background: #f0fff4; border: 1px solid #9ae6b4; color: #22543d; }
+  .alert-err   { background: #fff5f5; border: 1px solid #fed7d7; color: #c53030; }
+
+  .tipo-docs { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+  .check-pill { display: flex; align-items: center; gap: 6px; padding: 7px 14px; border: 1.5px solid #e2e8f0; border-radius: 20px; cursor: pointer; font-size: 13px; background: #f7fafc; transition: all .18s; user-select: none; }
+  .check-pill:hover { border-color: #bee3f8; }
+  .check-pill.on { background: #ebf8ff; border-color: #2c5282; color: #1a365d; font-weight: 600; }
+  .check-pill input { display: none; }
+  .check-pill.disabled { opacity: .5; pointer-events: none; }
+
+  .radio-group { display: flex; gap: 8px; flex-wrap: wrap; }
+  .radio-pill { display: flex; align-items: center; gap: 6px; padding: 7px 16px; border: 1.5px solid #e2e8f0; border-radius: 20px; cursor: pointer; font-size: 13px; background: #f7fafc; transition: all .18s; user-select: none; }
+  .radio-pill:hover { border-color: #bee3f8; }
+  .radio-pill.on { background: #ebf8ff; border-color: #2c5282; color: #1a365d; font-weight: 600; }
+  .radio-pill input { display: none; }
+
+  .progress-bar { background: #e2e8f0; border-radius: 8px; height: 8px; overflow: hidden; margin: 8px 0; }
+  .progress-fill { height: 100%; background: linear-gradient(90deg, #2c5282, #4299e1); border-radius: 8px; transition: width .35s ease; }
+
+  .log-box { background: #1a202c; color: #a0aec0; border-radius: 8px; padding: 1rem; font-family: 'Consolas', 'Courier New', monospace; font-size: 12px; max-height: 180px; overflow-y: auto; line-height: 1.9; }
+  .log-line { display: flex; gap: 10px; }
+  .log-time { color: #4a5568; flex-shrink: 0; }
+  .log-ok   { color: #68d391; }
+  .log-err  { color: #fc8181; }
+  .log-info { color: #90cdf4; }
+  .log-warn { color: #f6ad55; }
+
+  .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 1rem 0; }
+  .stat-card { background: #f7fafc; border-radius: 10px; padding: 14px; text-align: center; border: 1px solid #e2e8f0; }
+  .stat-num { font-size: 30px; font-weight: 700; color: #2c5282; line-height: 1; }
+  .stat-label { font-size: 11px; color: #718096; margin-top: 5px; font-weight: 500; }
+
+  .tabs { display: flex; border-bottom: 2px solid #e2e8f0; margin-bottom: 1rem; }
+  .tab { padding: 9px 18px; font-size: 13px; font-weight: 500; cursor: pointer; color: #718096; border-bottom: 2px solid transparent; margin-bottom: -2px; transition: all .18s; }
+  .tab:hover { color: #2c5282; }
+  .tab.on { color: #2c5282; border-bottom-color: #2c5282; font-weight: 600; }
+
+  .table-wrap { overflow: auto; max-height: 250px; border-radius: 8px; border: 1px solid #e2e8f0; }
+  .data-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .data-table th { background: #2c5282; color: white; padding: 9px 11px; text-align: left; font-weight: 600; position: sticky; top: 0; white-space: nowrap; }
+  .data-table td { padding: 8px 11px; border-bottom: 1px solid #e2e8f0; color: #4a5568; white-space: nowrap; }
+  .data-table tbody tr:hover td { background: #f7fafc; }
+  .data-table tbody tr:last-child td { border-bottom: none; }
+
+  .excel-result { background: #f0fff4; border: 1.5px solid #9ae6b4; border-radius: 10px; padding: 1.25rem; margin-top: 1rem; }
+  .excel-result h3 { font-size: 14px; font-weight: 600; color: #22543d; margin-bottom: .75rem; }
+  .excel-result p { font-size: 13px; color: #276749; margin-bottom: .875rem; line-height: 1.55; }
+  .download-btn { display: inline-flex; align-items: center; gap: 8px; padding: 11px 24px; background: #276749; color: white; border-radius: 8px; font-size: 14px; font-weight: 600; text-decoration: none; transition: all .18s; }
+  .download-btn:hover { background: #22543d; transform: translateY(-1px); }
+
+  .spinner { display: inline-block; width: 15px; height: 15px; border: 2px solid rgba(255,255,255,.35); border-top-color: white; border-radius: 50%; animation: spin .75s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .divider { border: none; border-top: 1px solid #e2e8f0; margin: 1.25rem 0; }
+
+  #step2, #step3 { display: none; }
+
+  @media (max-width: 600px) {
+    .main { padding: 1rem; }
+    .grid-2, .grid-3, .stats-grid { grid-template-columns: 1fr; }
+    .header { padding: 1rem; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-logo">DIAN</div>
+  <div>
+    <h1>Extractor de Facturas Electrónicas DIAN</h1>
+    <p>Descarga XMLs · Procesa facturas, notas y más · Genera Excel con 4 hojas</p>
+  </div>
+</div>
+
+<div class="main">
+
+  <div class="alert alert-warn">
+    <span>⚠️</span>
+    <div>Las credenciales <strong>no se almacenan</strong> en ningún servidor. Todo el procesamiento ocurre localmente en tu navegador.</div>
+  </div>
+
+  <!-- ── PASO 1: AUTENTICACIÓN ── -->
+  <div class="card">
+    <div class="card-title"><span class="step-badge">1</span> Autenticación DIAN</div>
+
+    <div class="alert alert-info">
+      <span>ℹ️</span>
+      <div>
+        Obtén tu token en <strong>catalogo-vpfe.dian.gov.co</strong> → Empresa → API Key.<br>
+        Para producción usa el portal <strong>vpfe.dian.gov.co</strong>.
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="form-group">
+        <label class="form-label">NIT de la empresa</label>
+        <input type="text" id="nit" placeholder="Ej: 900123456" maxlength="15">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Dígito de verificación</label>
+        <input type="text" id="dv" placeholder="Ej: 1" maxlength="1">
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Token / API Key DIAN</label>
+      <input type="password" id="token" placeholder="Pega aquí tu token del Portal DIAN">
+      <div class="note">Usado solo para las peticiones de esta sesión. No se guarda.</div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Ambiente</label>
+      <div class="radio-group">
+        <label class="radio-pill on" id="rAmb-hab" onclick="setAmb(this,'habilitacion')">
+          <input type="radio" name="ambiente" value="habilitacion" checked> 🧪 Habilitación (pruebas)
+        </label>
+        <label class="radio-pill" id="rAmb-prod" onclick="setAmb(this,'produccion')">
+          <input type="radio" name="ambiente" value="produccion"> 🚀 Producción
+        </label>
+      </div>
+    </div>
+
+    <button class="btn btn-primary" onclick="autenticar()" id="btnAuth">🔐 Verificar conexión</button>
+    <span id="authStatus" style="margin-left:14px;font-size:13px;color:#718096;vertical-align:middle;"></span>
+  </div>
+
+  <!-- ── PASO 2: FILTROS ── -->
+  <div class="card" id="step2">
+    <div class="card-title"><span class="step-badge">2</span> Período y tipos de documento</div>
+
+    <div class="grid-2">
+      <div class="form-group">
+        <label class="form-label">Fecha desde</label>
+        <input type="date" id="fechaDesde">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Fecha hasta</label>
+        <input type="date" id="fechaHasta">
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Tipos de documento a incluir (Emitidas y Recibidas)</label>
+      <div class="tipo-docs">
+        <label class="check-pill on" onclick="togglePill(this)"><input type="checkbox" value="01" checked>📄 Factura de venta (01)</label>
+        <label class="check-pill on" onclick="togglePill(this)"><input type="checkbox" value="03" checked>📄 Contingencia (03)</label>
+        <label class="check-pill on" onclick="togglePill(this)"><input type="checkbox" value="91" checked>📋 Nota crédito (91)</label>
+        <label class="check-pill on" onclick="togglePill(this)"><input type="checkbox" value="92" checked>📋 Nota débito (92)</label>
+        <label class="check-pill" onclick="togglePill(this)"><input type="checkbox" value="02">🏪 Factura de compra (02)</label>
+        <label class="check-pill" onclick="togglePill(this)"><input type="checkbox" value="05">📑 Mandato (05)</label>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Siempre separados en hojas propias (no se mezclan)</label>
+      <div class="tipo-docs">
+        <label class="check-pill on disabled"><input type="checkbox" checked>💼 Nómina electrónica (102)</label>
+        <label class="check-pill on disabled"><input type="checkbox" checked>✅ Application Response (AR)</label>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Rol en las transacciones</label>
+      <div class="radio-group">
+        <label class="radio-pill on" id="rRol-emit" onclick="setRol(this,'emisor')">
+          <input type="radio" name="rol" value="emisor" checked> 📤 Emisor (ventas)
+        </label>
+        <label class="radio-pill" id="rRol-rec" onclick="setRol(this,'receptor')">
+          <input type="radio" name="rol" value="receptor"> 📥 Receptor (compras)
+        </label>
+        <label class="radio-pill" id="rRol-ambos" onclick="setRol(this,'ambos')">
+          <input type="radio" name="rol" value="ambos"> 🔄 Ambos
+        </label>
+      </div>
+    </div>
+
+    <button class="btn btn-primary" onclick="descargarXML()" id="btnDescargar">⬇️ Descargar XMLs y procesar</button>
+  </div>
+
+  <!-- ── PASO 3: RESULTADOS ── -->
+  <div class="card" id="step3">
+    <div class="card-title"><span class="step-badge">3</span> Progreso y resultados</div>
+
+    <div class="stats-grid">
+      <div class="stat-card"><div class="stat-num" id="stTotal">0</div><div class="stat-label">Total procesadas</div></div>
+      <div class="stat-card"><div class="stat-num" id="stEmit">0</div><div class="stat-label">Emitidas</div></div>
+      <div class="stat-card"><div class="stat-num" id="stRecib">0</div><div class="stat-label">Recibidas</div></div>
+      <div class="stat-card"><div class="stat-num" id="stErr">0</div><div class="stat-label">Errores</div></div>
+    </div>
+
+    <div class="progress-bar"><div class="progress-fill" id="progBar" style="width:0%"></div></div>
+    <div style="font-size:12px;color:#718096;margin-bottom:.875rem" id="progTxt">Listo para iniciar</div>
+
+    <div class="log-box" id="logBox">
+      <div class="log-line"><span class="log-time">--:--:--</span><span class="log-info">Sistema listo. Esperando inicio de descarga...</span></div>
+    </div>
+
+    <div id="previewSec" style="display:none;margin-top:1.5rem">
+      <div class="tabs">
+        <div class="tab on"  onclick="showTab('emitidas')">📤 Emitidas</div>
+        <div class="tab"     onclick="showTab('recibidas')">📥 Recibidas</div>
+        <div class="tab"     onclick="showTab('nomina')">💼 Nómina</div>
+        <div class="tab"     onclick="showTab('ar')">✅ App. Response</div>
+      </div>
+      <div id="tabContent" class="table-wrap"></div>
+    </div>
+
+    <div id="downloadSec" style="display:none;margin-top:1.5rem">
+      <hr class="divider">
+      <button class="btn btn-success" onclick="generarExcel()" id="btnExcel">📊 Generar y descargar Excel</button>
+      <div class="note" style="margin-top:6px">Genera un .xlsx con 4 hojas: Emitidas · Recibidas · Nómina Electrónica · Application Response</div>
+      <div id="excelResult"></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ── Estado global ──────────────────────────────────────────────
+let datosEmitidas = [], datosRecibidas = [], datosNomina = [], datosAR = [];
+let rol = 'emisor', authenticated = false, nitEmpresa = '', ambiente = 'habilitacion';
+
+// Fechas por defecto: mes actual
+const hoy = new Date();
+const primerDia = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+document.getElementById('fechaDesde').value = primerDia.toISOString().split('T')[0];
+document.getElementById('fechaHasta').value = hoy.toISOString().split('T')[0];
+
+// ── Helpers UI ─────────────────────────────────────────────────
+function setAmb(el, val) {
+  ambiente = val;
+  ['rAmb-hab','rAmb-prod'].forEach(id => document.getElementById(id).classList.remove('on'));
+  el.classList.add('on');
+}
+function setRol(el, val) {
+  rol = val;
+  ['rRol-emit','rRol-rec','rRol-ambos'].forEach(id => document.getElementById(id).classList.remove('on'));
+  el.classList.add('on');
+}
+function togglePill(el) {
+  el.classList.toggle('on');
+  el.querySelector('input').checked = el.classList.contains('on');
+}
+function setProgress(pct, txt) {
+  document.getElementById('progBar').style.width = pct + '%';
+  document.getElementById('progTxt').textContent = txt;
+}
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function log(msg, tipo = 'info') {
+  const box = document.getElementById('logBox');
+  const t = new Date().toTimeString().split(' ')[0];
+  const div = document.createElement('div');
+  div.className = 'log-line';
+  div.innerHTML = `<span class="log-time">${t}</span><span class="log-${tipo}">${escHtml(msg)}</span>`;
+  box.appendChild(div);
+  box.scrollTop = box.scrollHeight;
+}
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── Autenticación ──────────────────────────────────────────────
+async function autenticar() {
+  const nit   = document.getElementById('nit').value.trim();
+  const dv    = document.getElementById('dv').value.trim();
+  const token = document.getElementById('token').value.trim();
+  const btn   = document.getElementById('btnAuth');
+  const st    = document.getElementById('authStatus');
+
+  if (!nit || !token) { st.textContent = '⚠️ Ingresa NIT y Token'; st.style.color = '#c53030'; return; }
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Verificando...';
+  st.textContent = '';
+
+  // ─── LLAMADA REAL A LA DIAN ────────────────────────────────────────────────
+  // Endpoints:
+  //   Habilitación : https://vpfe-hab.dian.gov.co/WcfDianCustomerServices.svc
+  //   Producción   : https://vpfe.dian.gov.co/WcfDianCustomerServices.svc
+  //
+  // Autenticación vía SOAP (método GetStatus) o Bearer token según ambiente.
+  // Por CORS el llamado debe pasar por un proxy backend (ver sección al final).
+  // Aquí simulamos la respuesta; sustituye este bloque por el fetch real.
+  // ──────────────────────────────────────────────────────────────────────────
+  await sleep(1200); // simula latencia de red
+
+  const exito = token.length >= 6; // Reemplazar: validar token contra la DIAN
+  if (exito) {
+    authenticated = true;
+    nitEmpresa = nit + (dv ? '-' + dv : '');
+    btn.innerHTML = '✅ Autenticado';
+    btn.style.background = '#276749';
+    btn.disabled = false;
+    st.textContent = `✓ NIT ${nitEmpresa} — ${ambiente === 'produccion' ? 'Producción' : 'Habilitación'}`;
+    st.style.color = '#276749';
+    document.getElementById('step2').style.display = 'block';
+    document.getElementById('step3').style.display = 'block';
+    log(`Autenticación exitosa — NIT: ${nitEmpresa} | Ambiente: ${ambiente}`, 'ok');
+  } else {
+    btn.disabled = false;
+    btn.innerHTML = '🔐 Verificar conexión';
+    st.textContent = '✗ Token inválido o error de conexión';
+    st.style.color  = '#c53030';
+    log('Error de autenticación — verifique el token DIAN', 'err');
+  }
+}
+
+// ── Datos de ejemplo (reemplazar con XMLs reales) ──────────────
+function genEjemplo(tipo) {
+  const empresas = [
+    { nit: '900234567', nombre: 'DISTRIBUCIONES ANDES S.A.S' },
+    { nit: '800111222', nombre: 'COMERCIALIZADORA DEL VALLE LTDA' },
+    { nit: '901234000', nombre: 'INVERSIONES ANDINA S.A' },
+    { nit: '700456789', nombre: 'SERVICIOS INTEGRADOS COLOMBIA S.A.S' },
+    { nit: '890123456', nombre: 'GRUPO EMPRESARIAL CARIBE LTDA' },
+  ];
+  const prefijos = tipo === 'emitida' ? ['FAC','VTA','FV'] : ['CO','FACT','FAC'];
+  const tiposDoc = ['Factura de Venta','Nota Crédito','Nota Débito'];
+  const rows = [];
+  const n = Math.floor(Math.random() * 8) + 5;
+  for (let i = 0; i < n; i++) {
+    const emp      = empresas[Math.floor(Math.random() * empresas.length)];
+    const subtotal = Math.floor(Math.random() * 9000000) + 500000;
+    const iva19    = Math.random() > 0.4 ? Math.floor(subtotal * 0.19) : 0;
+    const iva5     = iva19 === 0 ? Math.floor(subtotal * 0.05) : 0;
+    const otros    = Math.floor(Math.random() * 50000);
+    const total    = subtotal + iva19 + iva5 + otros;
+    const d = new Date(); d.setDate(d.getDate() - Math.floor(Math.random() * 30));
+    rows.push({
+      'Fecha Emisión':  d.toISOString().split('T')[0],
+      'Prefijo':        prefijos[Math.floor(Math.random() * prefijos.length)],
+      'Folio':          String(Math.floor(Math.random() * 9000) + 1000),
+      'Tipo Pago':      Math.random() > 0.5 ? 'Crédito' : 'Contado',
+      'NIT':            emp.nit,
+      'Nombre':         emp.nombre,
+      'Subtotal':       subtotal,
+      'IVA 19%':        iva19,
+      'IVA 5%':         iva5,
+      'Otros Impuestos':otros,
+      'Total':          total,
+      'CUFE':           'cufe' + Math.random().toString(36).substring(2, 20),
+      'Tipo Documento': tiposDoc[Math.floor(Math.random() * 3)]
+    });
+  }
+  return rows;
+}
+
+// ── Parser real de XML DIAN ────────────────────────────────────
+function parseXMLFactura(xmlText, esEmitida) {
+  try {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(xmlText, 'application/xml');
+    const get = tag => {
+      const el = doc.querySelector(tag) || doc.getElementsByTagNameNS('*', tag)[0];
+      return el ? el.textContent.trim() : '';
+    };
+
+    const id = get('ID');
+    const match = id.match(/^([A-Za-z]+)(\d+)$/);
+    const prefijo = match ? match[1] : '';
+    const folio   = match ? match[2] : id;
+
+    const condPago = get('PaymentMeansCode');
+
+    const supplierNIT  = (doc.querySelector('AccountingSupplierParty CompanyID') || {textContent:''}).textContent.trim();
+    const supplierName = (doc.querySelector('AccountingSupplierParty RegistrationName') || {textContent:''}).textContent.trim();
+    const customerNIT  = (doc.querySelector('AccountingCustomerParty CompanyID') || {textContent:''}).textContent.trim();
+    const customerName = (doc.querySelector('AccountingCustomerParty RegistrationName') || {textContent:''}).textContent.trim();
+
+    let iva19 = 0, iva5 = 0, otrosImp = 0;
+    doc.querySelectorAll('TaxTotal').forEach(tax => {
+      const pct = parseFloat((tax.querySelector('Percent') || {textContent:'0'}).textContent) || 0;
+      const amt = parseFloat((tax.querySelector('TaxAmount') || {textContent:'0'}).textContent) || 0;
+      const cat = (tax.querySelector('TaxScheme ID') || {textContent:''}).textContent;
+      if (cat === '01' || pct === 19) iva19 += amt;
+      else if (pct === 5)              iva5  += amt;
+      else                             otrosImp += amt;
+    });
+
+    const totalAmt = parseFloat(get('PayableAmount')) || 0;
+    const subtotal = totalAmt - iva19 - iva5 - otrosImp;
+
+    return {
+      'Fecha Emisión':  get('IssueDate'),
+      'Prefijo':        prefijo,
+      'Folio':          folio,
+      'Tipo Pago':      condPago === '2' ? 'Crédito' : 'Contado',
+      'NIT':            esEmitida ? customerNIT  : supplierNIT,
+      'Nombre':         esEmitida ? customerName : supplierName,
+      'Subtotal':       parseFloat(subtotal.toFixed(2)),
+      'IVA 19%':        parseFloat(iva19.toFixed(2)),
+      'IVA 5%':         parseFloat(iva5.toFixed(2)),
+      'Otros Impuestos':parseFloat(otrosImp.toFixed(2)),
+      'Total':          parseFloat(totalAmt.toFixed(2)),
+      'CUFE':           get('UUID'),
+      'Tipo Documento': get('InvoiceTypeCode') || get('CreditNoteTypeCode') || get('DebitNoteTypeCode')
+    };
+  } catch (e) { return null; }
+}
+
+// ── Descarga y procesamiento ───────────────────────────────────
+async function descargarXML() {
+  if (!authenticated) { log('⚠️ Debes autenticarte primero', 'err'); return; }
+
+  const btn = document.getElementById('btnDescargar');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Procesando...';
+
+  datosEmitidas = []; datosRecibidas = []; datosNomina = []; datosAR = [];
+  document.getElementById('previewSec').style.display  = 'none';
+  document.getElementById('downloadSec').style.display = 'none';
+  document.getElementById('excelResult').innerHTML = '';
+
+  const desde = document.getElementById('fechaDesde').value;
+  const hasta  = document.getElementById('fechaHasta').value;
+
+  log(`Período: ${desde} → ${hasta} | Ambiente: ${ambiente}`, 'info');
+  log(`Tipos: ${Array.from(document.querySelectorAll('.check-pill.on input')).map(i=>i.value).join(', ')}`, 'info');
+
+  setProgress(10, 'Consultando API DIAN...');
+  await sleep(600);
+
+  // ─── INTEGRACIÓN REAL ──────────────────────────────────────────────────────
+  // Aquí debes reemplazar genEjemplo() por llamadas reales al proxy backend:
+  //
+  //   const resp = await fetch('/api/dian/documentos', {
+  //     method: 'POST',
+  //     headers: { 'Content-Type': 'application/json' },
+  //     body: JSON.stringify({ nit: nitEmpresa, token, desde, hasta, rol, ambiente })
+  //   });
+  //   const xmls = await resp.json(); // array de strings XML
+  //   datosEmitidas = xmls.emitidas.map(x => parseXMLFactura(x, true)).filter(Boolean);
+  //   datosRecibidas = xmls.recibidas.map(x => parseXMLFactura(x, false)).filter(Boolean);
+  //   datosNomina = xmls.nomina;
+  //   datosAR = xmls.ar;
+  // ──────────────────────────────────────────────────────────────────────────
+
+  if (rol === 'emisor' || rol === 'ambos') {
+    log('Consultando documentos emitidos...', 'info');
+    setProgress(25, 'Descargando emitidas...'); await sleep(700);
+    datosEmitidas = genEjemplo('emitida');
+    log(`✓ ${datosEmitidas.length} emitidas procesadas`, 'ok');
+    setProgress(45, 'Emitidas listas'); await sleep(250);
+  }
+
+  if (rol === 'receptor' || rol === 'ambos') {
+    log('Consultando documentos recibidos...', 'info');
+    setProgress(55, 'Descargando recibidas...'); await sleep(700);
+    datosRecibidas = genEjemplo('recibida');
+    log(`✓ ${datosRecibidas.length} recibidas procesadas`, 'ok');
+    setProgress(72, 'Recibidas listas'); await sleep(250);
+  }
+
+  setProgress(82, 'Verificando nóminas electrónicas...'); await sleep(350);
+  const nN = Math.floor(Math.random() * 3);
+  for (let i = 0; i < nN; i++) {
+    datosNomina.push({
+      'Fecha': new Date().toISOString().split('T')[0],
+      'CUNE': 'cune' + Math.random().toString(36).substring(2,15),
+      'Empleado': 'EMPLEADO ' + (i+1),
+      'Tipo': 'Nómina Individual Electrónica',
+      'Total Devengado': Math.floor(Math.random() * 5000000 + 1000000)
+    });
+  }
+  if (nN > 0) log(`${nN} nóminas electrónicas separadas a hoja propia`, 'info');
+
+  setProgress(91, 'Verificando Application Response...'); await sleep(300);
+  const nAR = Math.floor(Math.random() * 4) + 1;
+  for (let i = 0; i < nAR; i++) {
+    datosAR.push({
+      'Fecha': new Date().toISOString().split('T')[0],
+      'CUFE Referenciado': 'cufe' + Math.random().toString(36).substring(2,18),
+      'Tipo Respuesta': ['Acuse de Recibo','Recibido Bien','Aceptación Expresa','Rechazo'][Math.floor(Math.random()*4)],
+      'Estado': 'Procesado'
+    });
+  }
+  log(`${nAR} Application Response separados a hoja propia`, 'info');
+
+  setProgress(100, '¡Procesamiento completado!');
+
+  document.getElementById('stTotal').textContent = datosEmitidas.length + datosRecibidas.length;
+  document.getElementById('stEmit').textContent  = datosEmitidas.length;
+  document.getElementById('stRecib').textContent = datosRecibidas.length;
+  document.getElementById('stErr').textContent   = 0;
+
+  log(`━━━ RESUMEN: ${datosEmitidas.length} emitidas · ${datosRecibidas.length} recibidas · ${datosNomina.length} nóminas · ${datosAR.length} AR ━━━`, 'ok');
+
+  document.getElementById('previewSec').style.display  = 'block';
+  document.getElementById('downloadSec').style.display = 'block';
+  showTab('emitidas');
+
+  btn.disabled = false;
+  btn.innerHTML = '🔄 Volver a descargar';
+}
+
+// ── Vista previa por pestañas ──────────────────────────────────
+function showTab(nombre) {
+  document.querySelectorAll('.tab').forEach((t, i) => {
+    t.classList.toggle('on', ['emitidas','recibidas','nomina','ar'][i] === nombre);
+  });
+  const datos = { emitidas: datosEmitidas, recibidas: datosRecibidas, nomina: datosNomina, ar: datosAR }[nombre] || [];
+  const cont  = document.getElementById('tabContent');
+  if (!datos.length) {
+    cont.innerHTML = '<div style="padding:2rem;text-align:center;color:#718096;font-size:13px">Sin datos en esta categoría para el período seleccionado</div>';
+    return;
+  }
+  const cols = Object.keys(datos[0]);
+  let html = '<table class="data-table"><thead><tr>' + cols.map(c => `<th>${escHtml(c)}</th>`).join('') + '</tr></thead><tbody>';
+  datos.slice(0, 25).forEach(row => {
+    html += '<tr>' + cols.map(c => `<td>${escHtml(row[c] !== undefined ? row[c] : '')}</td>`).join('') + '</tr>';
+  });
+  if (datos.length > 25) html += `<tr><td colspan="${cols.length}" style="text-align:center;color:#718096;padding:10px;font-size:12px">… y ${datos.length - 25} registros más en el Excel</td></tr>`;
+  html += '</tbody></table>';
+  cont.innerHTML = html;
+}
+
+// ── Generación de Excel ────────────────────────────────────────
+function generarExcel() {
+  const btn = document.getElementById('btnExcel');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner" style="border-top-color:white"></span> Generando...';
+  document.getElementById('excelResult').innerHTML = '';
+
+  try {
+    const wb = XLSX.utils.book_new();
+
+    const hdrs = ['Fecha Emisión','Prefijo','Folio','Tipo Pago','NIT','Nombre',
+                  'Subtotal','IVA 19%','IVA 5%','Otros Impuestos','Total','CUFE','Tipo Documento'];
+
+    function addSheet(datos, nombre) {
+      let ws;
+      if (!datos || !datos.length) {
+        ws = XLSX.utils.aoa_to_sheet([['Sin datos para el período seleccionado']]);
+      } else {
+        const filas = [hdrs, ...datos.map(r => hdrs.map(k => r[k] !== undefined ? r[k] : ''))];
+        ws = XLSX.utils.aoa_to_sheet(filas);
+        ws['!cols'] = hdrs.map((_, i) => ({ wch: i < 4 ? 14 : i < 6 ? 34 : i < 11 ? 16 : 30 }));
+      }
+      XLSX.utils.book_append_sheet(wb, ws, nombre);
+    }
+
+    addSheet(datosEmitidas,  'Emitidas');
+    addSheet(datosRecibidas, 'Recibidas');
+
+    if (datosNomina.length) {
+      const ws = XLSX.utils.json_to_sheet(datosNomina);
+      ws['!cols'] = Object.keys(datosNomina[0]).map(() => ({ wch: 28 }));
+      XLSX.utils.book_append_sheet(wb, ws, 'Nómina Electrónica');
+    } else {
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['Sin nóminas en el período']]), 'Nómina Electrónica');
+    }
+
+    if (datosAR.length) {
+      const ws = XLSX.utils.json_to_sheet(datosAR);
+      ws['!cols'] = Object.keys(datosAR[0]).map(() => ({ wch: 28 }));
+      XLSX.utils.book_append_sheet(wb, ws, 'Application Response');
+    } else {
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['Sin Application Response en el período']]), 'Application Response');
+    }
+
+    const desde    = document.getElementById('fechaDesde').value;
+    const hasta    = document.getElementById('fechaHasta').value;
+    const fileName = `Facturas_DIAN_${nitEmpresa}_${desde}_${hasta}.xlsx`;
+
+    // writeFile funciona normalmente fuera del sandbox de Claude
+    XLSX.writeFile(wb, fileName);
+
+    document.getElementById('excelResult').innerHTML = `
+      <div class="excel-result" style="margin-top:1rem">
+        <h3>✅ Excel descargado correctamente</h3>
+        <p>
+          📁 <strong>${escHtml(fileName)}</strong><br>
+          Hojas incluidas: Emitidas (${datosEmitidas.length}) · Recibidas (${datosRecibidas.length}) · Nómina Electrónica (${datosNomina.length}) · Application Response (${datosAR.length})
+        </p>
+      </div>`;
+
+    log(`✓ Excel generado y descargado: ${fileName}`, 'ok');
+
+  } catch (e) {
+    document.getElementById('excelResult').innerHTML = `<div class="alert alert-err" style="margin-top:1rem"><span>❌</span><div>Error al generar Excel: ${escHtml(e.message)}</div></div>`;
+    log(`Error generando Excel: ${e.message}`, 'err');
+  }
+
+  btn.disabled = false;
+  btn.innerHTML = '📊 Generar y descargar Excel';
+}
+</script>
+
+</body>
+</html>

@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Extractor Facturas DIAN</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:#f0f4f8;color:#1a202c;min-height:100vh}
+.header{background:#1a365d;color:white;padding:1.25rem 2rem;display:flex;align-items:center;gap:1rem}
+.header-logo{background:#f6ad55;border-radius:10px;width:44px;height:44px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;color:#1a365d;flex-shrink:0}
+.header h1{font-size:20px;font-weight:700}
+.header p{font-size:12px;opacity:.75;margin-top:3px}
+.main{padding:1.75rem 2rem;max-width:960px;margin:0 auto}
+.card{background:white;border-radius:12px;border:1px solid #e2e8f0;padding:1.5rem;margin-bottom:1.5rem;box-shadow:0 1px 4px rgba(0,0,0,.04)}
+.card-title{font-size:15px;font-weight:600;color:#2d3748;margin-bottom:1.1rem;display:flex;align-items:center;gap:8px}
+.step-badge{background:#2c5282;color:white;border-radius:50%;width:24px;height:24px;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0}
+.step-badge.ok{background:#276749}
+.form-group{margin-bottom:1rem}
+.form-label{display:block;font-size:12px;font-weight:600;color:#4a5568;margin-bottom:5px;text-transform:uppercase;letter-spacing:.03em}
+input[type=date]{width:100%;padding:9px 13px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:14px;color:#2d3748;background:#f7fafc;outline:none;transition:border-color .2s}
+input[type=date]:focus{border-color:#2c5282;background:white}
+.note{font-size:11px;color:#a0aec0;margin-top:5px;line-height:1.5}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
+.btn{padding:10px 20px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;border:none;transition:all .18s;display:inline-flex;align-items:center;gap:8px}
+.btn-primary{background:#2c5282;color:white}
+.btn-primary:hover{background:#2a4a7f;transform:translateY(-1px)}
+.btn-primary:disabled{background:#a0aec0;cursor:not-allowed;transform:none}
+.btn-success{background:#276749;color:white}
+.btn-success:hover{background:#22543d;transform:translateY(-1px)}
+.btn-success:disabled{background:#a0aec0;cursor:not-allowed;transform:none}
+.btn-outline{background:white;color:#2c5282;border:1.5px solid #2c5282}
+.btn-outline:hover{background:#ebf8ff}
+.alert{padding:11px 15px;border-radius:9px;font-size:13px;margin-bottom:1.1rem;display:flex;align-items:flex-start;gap:10px;line-height:1.55}
+.alert-info{background:#ebf8ff;border:1px solid #bee3f8;color:#2b6cb0}
+.alert-warn{background:#fffbeb;border:1px solid #fbd38d;color:#744210}
+.alert-ok{background:#f0fff4;border:1px solid #9ae6b4;color:#22543d}
+.alert-err{background:#fff5f5;border:1px solid #fed7d7;color:#c53030}
+.radio-group{display:flex;gap:8px;flex-wrap:wrap}
+.radio-pill{display:flex;align-items:center;gap:6px;padding:7px 16px;border:1.5px solid #e2e8f0;border-radius:20px;cursor:pointer;font-size:13px;background:#f7fafc;transition:all .18s;user-select:none}
+.radio-pill.on{background:#ebf8ff;border-color:#2c5282;color:#1a365d;font-weight:600}
+.radio-pill input{display:none}
+.progress-bar{background:#e2e8f0;border-radius:8px;height:8px;overflow:hidden;margin:8px 0}
+.progress-fill{height:100%;background:linear-gradient(90deg,#2c5282,#4299e1);border-radius:8px;transition:width .35s ease}
+.log-box{background:#1a202c;color:#a0aec0;border-radius:8px;padding:1rem;font-family:monospace;font-size:12px;max-height:180px;overflow-y:auto;line-height:1.9}
+.log-line{display:flex;gap:10px}
+.log-time{color:#4a5568;flex-shrink:0}
+.log-ok{color:#68d391}.log-err{color:#fc8181}.log-info{color:#90cdf4}.log-warn{color:#f6ad55}
+.stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:1rem 0}
+.stat-card{background:#f7fafc;border-radius:10px;padding:14px;text-align:center;border:1px solid #e2e8f0}
+.stat-num{font-size:30px;font-weight:700;color:#2c5282;line-height:1}
+.stat-label{font-size:11px;color:#718096;margin-top:5px;font-weight:500}
+.tabs{display:flex;border-bottom:2px solid #e2e8f0;margin-bottom:1rem}
+.tab{padding:9px 18px;font-size:13px;font-weight:500;cursor:pointer;color:#718096;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .18s}
+.tab.on{color:#2c5282;border-bottom-color:#2c5282;font-weight:600}
+.table-wrap{overflow:auto;max-height:260px;border-radius:8px;border:1px solid #e2e8f0}
+.data-table{width:100%;border-collapse:collapse;font-size:12px}
+.data-table th{background:#2c5282;color:white;padding:9px 11px;text-align:left;font-weight:600;position:sticky;top:0;white-space:nowrap}
+.data-table td{padding:8px 11px;border-bottom:1px solid #e2e8f0;color:#4a5568;white-space:nowrap}
+.data-table tbody tr:hover td{background:#f7fafc}
+.spinner{display:inline-block;width:15px;height:15px;border:2px solid rgba(255,255,255,.35);border-top-color:white;border-radius:50%;animation:spin .75s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.cookie-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.chip{background:#f0fff4;border:1px solid #9ae6b4;color:#22543d;border-radius:20px;padding:4px 12px;font-size:11px;font-weight:600}
+.chip.missing{background:#fff5f5;border-color:#fed7d7;color:#c53030}
+#stepFiltros,#stepResultados{display:none}
+@media(max-width:600px){.main{padding:1rem}.grid-2{grid-template-columns:1fr}.stats-grid{grid-template-columns:1fr 1fr}}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-logo">DIAN</div>
+  <div>
+    <h1>Extractor de Facturas Electrónicas DIAN</h1>
+    <p>Conectado al portal catalogo-vpfe.dian.gov.co vía extensión Chrome</p>
+  </div>
+</div>
+
+<div class="main">
+
+<!-- ── PASO 1: EXTENSIÓN ── -->
+<div class="card">
+  <div class="card-title">
+    <span class="step-badge" id="badge1">1</span>
+    Sesión DIAN — vía Extensión Chrome
+  </div>
+
+  <div class="alert alert-info" id="alertExtension">
+    <span>🔌</span>
+    <div>Verificando la extensión DIAN Extractor...</div>
+  </div>
+
+  <div id="estadoExtension"></div>
+</div>
+
+<!-- ── PASO 2: FILTROS ── -->
+<div class="card" id="stepFiltros">
+  <div class="card-title"><span class="step-badge">2</span> Período y tipo de documentos</div>
+
+  <div class="grid-2">
+    <div class="form-group">
+      <label class="form-label">Fecha desde</label>
+      <input type="date" id="fechaDesde">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Fecha hasta</label>
+      <input type="date" id="fechaHasta">
+    </div>
+  </div>
+
+  <div class="form-group">
+    <label class="form-label">Documentos a procesar</label>
+    <div class="radio-group">
+      <label class="radio-pill on" id="rb-ambos" onclick="setTipo(this,'ambos')">
+        <input type="radio" name="tipo" value="ambos" checked> 🔄 Emitidos + Recibidos
+      </label>
+      <label class="radio-pill" id="rb-enviados" onclick="setTipo(this,'enviados')">
+        <input type="radio" name="tipo" value="enviados"> 📤 Solo Emitidos
+      </label>
+      <label class="radio-pill" id="rb-recibidos" onclick="setTipo(this,'recibidos')">
+        <input type="radio" name="tipo" value="recibidos"> 📥 Solo Recibidos
+      </label>
+    </div>
+  </div>
+
+  <button class="btn btn-primary" onclick="iniciarDescarga()" id="btnDescargar">
+    ⬇️ Iniciar descarga y procesamiento
+  </button>
+</div>
+
+<!-- ── PASO 3: RESULTADOS ── -->
+<div id="stepResultados">
+<div class="card">
+  <div class="card-title"><span class="step-badge">3</span> Progreso y resultados</div>
+
+  <div class="stats-grid">
+    <div class="stat-card"><div class="stat-num" id="stTotal">0</div><div class="stat-label">Total</div></div>
+    <div class="stat-card"><div class="stat-num" id="stEmit">0</div><div class="stat-label">Emitidas</div></div>
+    <div class="stat-card"><div class="stat-num" id="stRecib">0</div><div class="stat-label">Recibidas</div></div>
+    <div class="stat-card"><div class="stat-num" id="stErr">0</div><div class="stat-label">Errores</div></div>
+  </div>
+
+  <div class="progress-bar"><div class="progress-fill" id="progBar" style="width:0%"></div></div>
+  <div style="font-size:12px;color:#718096;margin-bottom:.875rem" id="progTxt">Iniciando...</div>
+
+  <div class="log-box" id="logBox"></div>
+
+  <div id="previewSec" style="display:none;margin-top:1.5rem">
+    <div class="tabs">
+      <div class="tab on" onclick="showTab('emitidas')">📤 Emitidas</div>
+      <div class="tab"    onclick="showTab('recibidas')">📥 Recibidas</div>
+      <div class="tab"    onclick="showTab('nomina')">💼 Nómina</div>
+      <div class="tab"    onclick="showTab('ar')">✅ App. Response</div>
+    </div>
+    <div id="tabContent" class="table-wrap"></div>
+  </div>
+
+  <div id="downloadSec" style="display:none;margin-top:1.5rem;padding-top:1.25rem;border-top:1px solid #e2e8f0">
+    <button class="btn btn-success" onclick="generarExcel()" id="btnExcel">
+      📊 Generar y descargar Excel
+    </button>
+    <div class="note" style="margin-top:6px">4 hojas: Emitidas · Recibidas · Nómina Electrónica · Application Response</div>
+    <div id="excelResult"></div>
+  </div>
+</div>
+</div>
+
+</div>
+
+<script>
+// ── Estado global ──────────────────────────────────────────────
+const EXTENSION_ID = null; // Se detecta automáticamente
+const DIAN_BASE = "https://catalogo-vpfe.dian.gov.co";
+
+let cookies = null;
+let datosEmitidas = [], datosRecibidas = [], datosNomina = [], datosAR = [];
+let tipoSeleccionado = 'ambos';
+
+// Fechas por defecto
+const hoy = new Date();
+const primerDia = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+document.getElementById('fechaDesde').value = primerDia.toISOString().split('T')[0];
+document.getElementById('fechaHasta').value = hoy.toISOString().split('T')[0];
+
+// ── Al cargar, leer cookies de la extensión ────────────────────
+window.addEventListener('load', () => {
+  leerCookiesExtension();
+});
+
+async function leerCookiesExtension() {
+  const alertEl = document.getElementById('alertExtension');
+  const estadoEl = document.getElementById('estadoExtension');
+
+  try {
+    // Intentar leer del storage de la extensión
+    // La extensión guarda las cookies en chrome.storage.local con key 'dian_cookies'
+    // Usamos un iframe de mensajería o el objeto window.__DIAN_COOKIES inyectado
+    
+    // Método 1: cookies inyectadas por la extensión via window
+    if (window.__DIAN_EXTENSION__) {
+      const data = await window.__DIAN_EXTENSION__.getCookies();
+      if (data && data.cookies) {
+        procesarCookiesRecibidas(data.cookies);
+        return;
+      }
+    }
+
+    // Método 2: URL params (la extensión abre la app con ?session=...)
+    const params = new URLSearchParams(window.location.search);
+    const sessionParam = params.get('session');
+    if (sessionParam) {
+      try {
+        const decoded = JSON.parse(atob(sessionParam));
+        procesarCookiesRecibidas(decoded);
+        return;
+      } catch(e) {}
+    }
+
+    // Método 3: sessionStorage (la extensión puede haberlas puesto ahí)
+    const stored = sessionStorage.getItem('dian_cookies');
+    if (stored) {
+      try {
+        const decoded = JSON.parse(stored);
+        procesarCookiesRecibidas(decoded);
+        return;
+      } catch(e) {}
+    }
+
+    // Sin extensión — modo manual
+    mostrarModoManual(alertEl, estadoEl);
+
+  } catch(e) {
+    mostrarModoManual(alertEl, estadoEl);
+  }
+}
+
+function procesarCookiesRecibidas(cookiesData) {
+  cookies = cookiesData;
+  const alertEl = document.getElementById('alertExtension');
+  const estadoEl = document.getElementById('estadoExtension');
+  const badge = document.getElementById('badge1');
+
+  alertEl.className = 'alert alert-ok';
+  alertEl.innerHTML = '<span>✅</span><div><strong>Extensión conectada — Sesión DIAN activa</strong><br>Cookies capturadas automáticamente.</div>';
+  badge.classList.add('ok');
+
+  const cookieNames = Object.keys(cookiesData);
+  estadoEl.innerHTML = `
+    <div class="cookie-chips">
+      ${cookieNames.map(n => `<span class="chip">✓ ${n.replace('__','').replace('.AspNet.','').replace('ASP.NET_','')}</span>`).join('')}
+    </div>
+    <div style="margin-top:12px">
+      <button class="btn btn-outline" onclick="leerCookiesExtension()" style="width:auto;padding:7px 14px;font-size:13px">
+        🔄 Actualizar sesión
+      </button>
+    </div>`;
+
+  document.getElementById('stepFiltros').style.display = 'block';
+}
+
+function mostrarModoManual(alertEl, estadoEl) {
+  alertEl.className = 'alert alert-warn';
+  alertEl.innerHTML = `
+    <span>⚠️</span>
+    <div>
+      <strong>Extensión no detectada</strong><br>
+      Instala la extensión DIAN Extractor en Chrome, inicia sesión en el portal DIAN y haz clic en el ícono de la extensión.
+    </div>`;
+
+  estadoEl.innerHTML = `
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
+      <a href="https://catalogo-vpfe.dian.gov.co" target="_blank" class="btn btn-primary" style="font-size:13px;padding:8px 16px;text-decoration:none">
+        🌐 Ir al portal DIAN
+      </a>
+      <button onclick="leerCookiesExtension()" class="btn btn-outline" style="font-size:13px;padding:8px 16px">
+        🔄 Reintentar
+      </button>
+      <button onclick="mostrarInputManual()" class="btn btn-outline" style="font-size:13px;padding:8px 16px">
+        ✍️ Ingresar cookies manualmente
+      </button>
+    </div>
+    <div id="inputManual" style="display:none;margin-top:1rem"></div>`;
+}
+
+function mostrarInputManual() {
+  document.getElementById('inputManual').innerHTML = `
+    <div style="background:#f7fafc;border:1px solid #e2e8f0;border-radius:10px;padding:1rem">
+      <p style="font-size:12px;color:#4a5568;margin-bottom:.75rem;font-weight:600">PEGA LAS COOKIES MANUALMENTE (F12 → Network → Headers)</p>
+      ${['__RequestVerificationToken','ASP.NET_SessionId','.AspNet.ApplicationCookie','ARRAffinity','ARRAffinitySameSite'].map(n => `
+        <div style="margin-bottom:.625rem">
+          <label style="font-size:11px;font-weight:600;color:#718096;display:block;margin-bottom:3px">${n}</label>
+          <input type="text" id="mc_${n.replace(/[^a-z0-9]/gi,'_')}" placeholder="${n}..." 
+                 style="width:100%;padding:7px 10px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:12px;font-family:monospace;background:#f7fafc;outline:none">
+        </div>`).join('')}
+      <button onclick="guardarCookiesManuales()" class="btn btn-primary" style="margin-top:8px;width:100%;font-size:13px;padding:9px">
+        ✅ Usar estas cookies
+      </button>
+    </div>`;
+}
+
+function guardarCookiesManuales() {
+  const map = {
+    '__RequestVerificationToken': '__RequestVerificationToken',
+    'ASP_NET_SessionId': 'ASP.NET_SessionId',
+    '_AspNet_ApplicationCookie': '.AspNet.ApplicationCookie',
+    'ARRAffinity': 'ARRAffinity',
+    'ARRAffinitySameSite': 'ARRAffinitySameSite'
+  };
+  const cookiesData = {};
+  let tieneMinimo = false;
+  Object.entries(map).forEach(([inputKey, cookieName]) => {
+    const val = (document.getElementById(`mc_${inputKey}`) || {}).value?.trim();
+    if (val) {
+      cookiesData[cookieName] = val;
+      if (cookieName === 'ASP.NET_SessionId') tieneMinimo = true;
+    }
+  });
+  if (!tieneMinimo) { alert('Pega al menos el ASP.NET_SessionId'); return; }
+  procesarCookiesRecibidas(cookiesData);
+}
+
+// ── Helpers ────────────────────────────────────────────────────
+function setTipo(el, val) {
+  tipoSeleccionado = val;
+  ['rb-ambos','rb-enviados','rb-recibidos'].forEach(id => document.getElementById(id).classList.remove('on'));
+  el.classList.add('on');
+}
+
+function log(msg, tipo = 'info') {
+  const box = document.getElementById('logBox');
+  const t = new Date().toTimeString().split(' ')[0];
+  const div = document.createElement('div');
+  div.className = 'log-line';
+  div.innerHTML = `<span class="log-time">${t}</span><span class="log-${tipo}">${esc(String(msg))}</span>`;
+  box.appendChild(div);
+  box.scrollTop = box.scrollHeight;
+}
+
+function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function setProgress(p, t) { document.getElementById('progBar').style.width=p+'%'; document.getElementById('progTxt').textContent=t; }
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function toFechaDian(dateStr, inicio = true) {
+  const [y,m,d] = dateStr.split('-');
+  return `${parseInt(m)}/${parseInt(d)}/${y} ${inicio ? '12:00:00 AM' : '11:59:59 PM'}`;
+}
+
+function buildCookieHeader(cookies) {
+  return Object.entries(cookies).map(([k,v]) => `${k}=${v}`).join('; ');
+}
+
+// ── Descarga real via fetch con cookies ────────────────────────
+async function fetchDian(path, options = {}) {
+  const cookieHeader = buildCookieHeader(cookies);
+  const headers = {
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    'Accept-Language': 'es-419,es;q=0.9',
+    'Referer': DIAN_BASE + '/',
+    'Cookie': cookieHeader,
+    ...options.headers
+  };
+
+  // NOTA: Las llamadas directas al dominio DIAN desde GitHub Pages
+  // serán bloqueadas por CORS. La extensión Chrome soluciona esto
+  // interceptando las peticiones y añadiendo los headers necesarios.
+  // El content script de la extensión actúa como proxy local.
+  
+  const resp = await fetch(DIAN_BASE + path, {
+    ...options,
+    headers,
+    credentials: 'include',
+    mode: 'cors'
+  });
+  return resp;
+}
+
+async function obtenerTrackIds(tipo, desde, hasta) {
+  const endpoint = tipo === 'enviados' ? '/Document/Sent' : '/Document/Received';
+  const formData = new FormData();
+  formData.append('__RequestVerificationToken', cookies['__RequestVerificationToken'] || '');
+  formData.append('Page', '0');
+  formData.append('StartDate', desde);
+  formData.append('EndDate', hasta);
+  formData.append('DocumentKey', '');
+  formData.append('SerieAndNumber', '');
+  formData.append('ReceiverCode', '');
+  formData.append('DocumentTypeId', '00');
+  formData.append('Status', '0');
+  formData.append('RadianStatus', '0');
+  formData.append('ReferencesType', '00');
+
+  const resp = await fetchDian(endpoint, { method: 'POST', body: formData });
+  const html = await resp.text();
+
+  if (html.includes('Login') || html.includes('login')) {
+    throw new Error('Sesión DIAN expirada — regresa al portal y vuelve a iniciar sesión');
+  }
+
+  const matches = [...html.matchAll(/DownloadZipFiles\?trackId=([a-fA-F0-9]{64,})/g)];
+  return [...new Set(matches.map(m => m[1]))];
+}
+
+async function descargarYParsearZip(trackId, esEmitida) {
+  const resp = await fetchDian(`/Document/DownloadZipFiles?trackId=${trackId}`);
+  if (!resp.ok) return null;
+  const blob = await resp.blob();
+  const zipBytes = await blob.arrayBuffer();
+  return parsearZip(zipBytes, esEmitida);
+}
+
+async function parsearZip(buffer, esEmitida) {
+  // Usar JSZip si está disponible, sino parseo manual básico
+  const bytes = new Uint8Array(buffer);
+  // Buscar el XML dentro del ZIP (firma PK + buscar .xml)
+  const xmlStr = extraerXMLdeZip(bytes);
+  if (!xmlStr) return null;
+  return parsearXML(xmlStr, esEmitida);
+}
+
+function extraerXMLdeZip(bytes) {
+  // Parseo básico de ZIP para extraer el primer archivo .xml
+  try {
+    let pos = 0;
+    while (pos < bytes.length - 4) {
+      // Firma de Local File Header: PK\x03\x04
+      if (bytes[pos]===0x50 && bytes[pos+1]===0x4B && bytes[pos+2]===0x03 && bytes[pos+3]===0x04) {
+        const compression = bytes[pos+8] | (bytes[pos+9] << 8);
+        const compressedSize = bytes[pos+18] | (bytes[pos+19]<<8) | (bytes[pos+20]<<16) | (bytes[pos+21]<<24);
+        const filenameLen = bytes[pos+26] | (bytes[pos+27]<<8);
+        const extraLen = bytes[pos+28] | (bytes[pos+29]<<8);
+        const filenameStart = pos + 30;
+        const filename = new TextDecoder().decode(bytes.slice(filenameStart, filenameStart + filenameLen));
+        const dataStart = filenameStart + filenameLen + extraLen;
+
+        if (filename.endsWith('.xml') && compression === 0) {
+          // Sin compresión - leer directo
+          const xmlBytes = bytes.slice(dataStart, dataStart + compressedSize);
+          return new TextDecoder('utf-8').decode(xmlBytes);
+        }
+        pos = dataStart + compressedSize;
+      } else {
+        pos++;
+      }
+    }
+  } catch(e) {}
+  return null;
+}
+
+function parsearXML(xmlStr, esEmitida) {
+  try {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(xmlStr, 'application/xml');
+
+    const get = tag => {
+      for (const el of doc.getElementsByTagName('*')) {
+        if (el.localName === tag && el.textContent) return el.textContent.trim();
+      }
+      return '';
+    };
+
+    const docId = get('ID');
+    const m = docId.match(/^([A-Za-z]+)(\d+)$/);
+    const prefijo = m ? m[1] : '';
+    const folio   = m ? m[2] : docId;
+
+    const tipoCod = get('InvoiceTypeCode') || get('CreditNoteTypeCode') || get('DebitNoteTypeCode');
+    const tipoMap = {'01':'Factura de Venta','03':'Contingencia','91':'Nota Crédito','92':'Nota Débito','96':'Application Response','102':'Nómina Electrónica'};
+    const tipoDesc = tipoMap[tipoCod] || `Tipo ${tipoCod}`;
+
+    const condPago = get('PaymentMeansCode');
+    const tipoPago = condPago === '2' ? 'Crédito' : 'Contado';
+
+    // Proveedor y receptor
+    let supNIT='', supNombre='', cusNIT='', cusNombre='';
+    for (const el of doc.getElementsByTagName('*')) {
+      if (el.localName === 'AccountingSupplierParty') {
+        for (const c of el.getElementsByTagName('*')) {
+          if (c.localName==='CompanyID') supNIT = c.textContent.trim();
+          if (c.localName==='RegistrationName') supNombre = c.textContent.trim();
+        }
+      }
+      if (el.localName === 'AccountingCustomerParty') {
+        for (const c of el.getElementsByTagName('*')) {
+          if (c.localName==='CompanyID') cusNIT = c.textContent.trim();
+          if (c.localName==='RegistrationName') cusNombre = c.textContent.trim();
+        }
+      }
+    }
+
+    // Impuestos
+    let iva19=0, iva5=0, otros=0;
+    for (const tax of doc.getElementsByTagName('*')) {
+      if (tax.localName !== 'TaxTotal') continue;
+      let amt=0, pct=0, cat='';
+      for (const c of tax.getElementsByTagName('*')) {
+        if (c.localName==='TaxAmount') amt = parseFloat(c.textContent)||0;
+        if (c.localName==='Percent') pct = parseFloat(c.textContent)||0;
+        if (c.localName==='ID' && c.parentElement?.localName==='TaxScheme') cat = c.textContent.trim();
+      }
+      if (cat==='01'||pct===19) iva19+=amt;
+      else if (pct===5) iva5+=amt;
+      else if (amt>0) otros+=amt;
+    }
+
+    const total = parseFloat(get('PayableAmount')) || 0;
+    const subtotal = total - iva19 - iva5 - otros;
+
+    return {
+      es_nomina: tipoCod === '102',
+      es_ar: tipoCod === '96',
+      tipo_desc: tipoDesc,
+      fecha_emision: get('IssueDate'),
+      prefijo, folio,
+      tipo_pago: tipoPago,
+      nit:    esEmitida ? cusNIT    : supNIT,
+      nombre: esEmitida ? cusNombre : supNombre,
+      subtotal: +subtotal.toFixed(2),
+      iva_19:   +iva19.toFixed(2),
+      iva_5:    +iva5.toFixed(2),
+      otros_impuestos: +otros.toFixed(2),
+      total:    +total.toFixed(2),
+      cufe: get('UUID'),
+    };
+  } catch(e) { return null; }
+}
+
+// ── Proceso principal ──────────────────────────────────────────
+async function iniciarDescarga() {
+  if (!cookies) { alert('Primero conecta la extensión y verifica la sesión DIAN'); return; }
+  const desde = document.getElementById('fechaDesde').value;
+  const hasta  = document.getElementById('fechaHasta').value;
+  if (!desde || !hasta) { alert('Selecciona el rango de fechas'); return; }
+
+  const btn = document.getElementById('btnDescargar');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Procesando...';
+
+  datosEmitidas=[]; datosRecibidas=[]; datosNomina=[]; datosAR=[];
+  document.getElementById('stepResultados').style.display = 'block';
+  document.getElementById('previewSec').style.display = 'none';
+  document.getElementById('downloadSec').style.display = 'none';
+  document.getElementById('logBox').innerHTML = '';
+  ['stTotal','stEmit','stRecib','stErr'].forEach(id => document.getElementById(id).textContent = '0');
+
+  const fechaDesde = toFechaDian(desde, true);
+  const fechaHasta = toFechaDian(hasta, false);
+
+  log(`Período: ${desde} → ${hasta}`, 'info');
+  setProgress(5, 'Conectando con el portal DIAN...');
+
+  async function procesarTipo(tipo, esEmitida) {
+    log(`Consultando documentos ${tipo}...`, 'info');
+    try {
+      const trackIds = await obtenerTrackIds(tipo, fechaDesde, fechaHasta);
+      log(`✓ ${trackIds.length} documentos encontrados en ${tipo}`, 'ok');
+
+      let procesados = 0;
+      for (const trackId of trackIds) {
+        const doc = await descargarYParsearZip(trackId, esEmitida);
+        procesados++;
+        setProgress(
+          tipo === 'enviados' ? (procesados/trackIds.length)*45+5 : (procesados/trackIds.length)*45+50,
+          `Procesando ${tipo}: ${procesados}/${trackIds.length}`
+        );
+        if (!doc) continue;
+        if (doc.es_nomina) datosNomina.push(doc);
+        else if (doc.es_ar) datosAR.push(doc);
+        else if (esEmitida) datosEmitidas.push(doc);
+        else datosRecibidas.push(doc);
+        await sleep(150); // pausa entre descargas para no saturar
+      }
+      log(`✓ ${esEmitida ? datosEmitidas.length : datosRecibidas.length} documentos procesados en ${tipo}`, 'ok');
+    } catch(e) {
+      log(`Error en ${tipo}: ${e.message}`, 'err');
+    }
+  }
+
+  if (tipoSeleccionado === 'enviados' || tipoSeleccionado === 'ambos') await procesarTipo('enviados', true);
+  if (tipoSeleccionado === 'recibidos' || tipoSeleccionado === 'ambos') await procesarTipo('recibidos', false);
+
+  setProgress(100, '¡Completado!');
+
+  const total = datosEmitidas.length + datosRecibidas.length;
+  document.getElementById('stTotal').textContent = total;
+  document.getElementById('stEmit').textContent  = datosEmitidas.length;
+  document.getElementById('stRecib').textContent = datosRecibidas.length;
+  document.getElementById('stErr').textContent   = 0;
+
+  log(`━━━ ${datosEmitidas.length} emitidas · ${datosRecibidas.length} recibidas · ${datosNomina.length} nóminas · ${datosAR.length} AR ━━━`, 'ok');
+
+  if (total > 0 || datosNomina.length || datosAR.length) {
+    document.getElementById('previewSec').style.display = 'block';
+    document.getElementById('downloadSec').style.display = 'block';
+    showTab('emitidas');
+  }
+
+  btn.disabled = false;
+  btn.innerHTML = '🔄 Volver a descargar';
+}
+
+// ── Vista previa ───────────────────────────────────────────────
+function showTab(nombre) {
+  document.querySelectorAll('.tab').forEach((t,i) => {
+    t.classList.toggle('on', ['emitidas','recibidas','nomina','ar'][i]===nombre);
+  });
+  const datos = {emitidas:datosEmitidas,recibidas:datosRecibidas,nomina:datosNomina,ar:datosAR}[nombre]||[];
+  const cont = document.getElementById('tabContent');
+  if (!datos.length) { cont.innerHTML='<div style="padding:2rem;text-align:center;color:#718096;font-size:13px">Sin datos</div>'; return; }
+  const excluir = ['es_nomina','es_ar'];
+  const cols = Object.keys(datos[0]).filter(k => !excluir.includes(k));
+  let html = '<table class="data-table"><thead><tr>'+cols.map(c=>`<th>${esc(c)}</th>`).join('')+'</tr></thead><tbody>';
+  datos.slice(0,30).forEach(r => { html+='<tr>'+cols.map(c=>`<td>${esc(String(r[c]??''))}</td>`).join('')+'</tr>'; });
+  if (datos.length>30) html+=`<tr><td colspan="${cols.length}" style="text-align:center;color:#718096;padding:10px;font-size:12px">… y ${datos.length-30} más</td></tr>`;
+  html+='</tbody></table>';
+  cont.innerHTML=html;
+}
+
+// ── Excel ──────────────────────────────────────────────────────
+function generarExcel() {
+  const btn = document.getElementById('btnExcel');
+  btn.disabled=true; btn.innerHTML='<span class="spinner" style="border-top-color:white"></span> Generando...';
+  document.getElementById('excelResult').innerHTML='';
+  try {
+    const wb = XLSX.utils.book_new();
+    const hdrs = ['fecha_emision','prefijo','folio','tipo_pago','nit','nombre','subtotal','iva_19','iva_5','otros_impuestos','total','cufe','tipo_desc'];
+    const hdrsLabel = ['Fecha Emisión','Prefijo','Folio','Tipo Pago','NIT','Nombre','Subtotal','IVA 19%','IVA 5%','Otros Impuestos','Total','CUFE','Tipo Documento'];
+    const anchos = [12,10,10,10,14,34,14,12,12,14,14,30,18];
+
+    function addSheet(datos, nombre) {
+      let ws;
+      if (!datos?.length) {
+        ws = XLSX.utils.aoa_to_sheet([['Sin datos para el período seleccionado']]);
+      } else {
+        ws = XLSX.utils.aoa_to_sheet([hdrsLabel,...datos.map(r=>hdrs.map(k=>r[k]??''))]);
+        ws['!cols'] = anchos.map(w=>({wch:w}));
+      }
+      XLSX.utils.book_append_sheet(wb,ws,nombre);
+    }
+
+    addSheet(datosEmitidas,'Emitidas');
+    addSheet(datosRecibidas,'Recibidas');
+    datosNomina.length ? XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(datosNomina),'Nómina Electrónica')
+                       : addSheet([],'Nómina Electrónica');
+    datosAR.length ? XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(datosAR),'Application Response')
+                   : addSheet([],'Application Response');
+
+    const desde = document.getElementById('fechaDesde').value;
+    const hasta  = document.getElementById('fechaHasta').value;
+    const fileName = `Facturas_DIAN_${desde}_${hasta}.xlsx`;
+    XLSX.writeFile(wb, fileName);
+
+    document.getElementById('excelResult').innerHTML=`
+      <div style="background:#f0fff4;border:1.5px solid #9ae6b4;border-radius:10px;padding:1.25rem;margin-top:1rem">
+        <p style="font-size:14px;font-weight:600;color:#22543d;margin-bottom:.5rem">✅ Excel descargado</p>
+        <p style="font-size:13px;color:#276749">📁 <strong>${esc(fileName)}</strong><br>
+        Emitidas: ${datosEmitidas.length} · Recibidas: ${datosRecibidas.length} · Nómina: ${datosNomina.length} · AR: ${datosAR.length}</p>
+      </div>`;
+    log(`✓ Excel: ${fileName}`, 'ok');
+  } catch(e) {
+    document.getElementById('excelResult').innerHTML=`<div class="alert alert-err" style="margin-top:1rem"><span>❌</span><div>${esc(e.message)}</div></div>`;
+    log('Error Excel: '+e.message,'err');
+  }
+  btn.disabled=false; btn.innerHTML='📊 Generar y descargar Excel';
+}
+</script>
+</body>
+</html>

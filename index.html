@@ -60,7 +60,6 @@ input[type=date]:focus{border-color:#2c5282;background:white}
 .data-table tbody tr:hover td{background:#f7fafc}
 .spinner{display:inline-block;width:15px;height:15px;border:2px solid rgba(255,255,255,.35);border-top-color:white;border-radius:50%;animation:spin .75s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
-.ext-id{font-family:monospace;font-size:11px;background:#f7fafc;border:1px solid #e2e8f0;border-radius:6px;padding:4px 8px;color:#4a5568;word-break:break-all;margin-top:6px;display:block}
 #stepFiltros,#stepResultados{display:none}
 @media(max-width:600px){.main{padding:1rem}.grid-2{grid-template-columns:1fr}.stats-grid{grid-template-columns:1fr 1fr}}
 </style>
@@ -77,30 +76,17 @@ input[type=date]:focus{border-color:#2c5282;background:white}
 
 <div class="main">
 
-<!-- ── PASO 1: EXTENSIÓN ── -->
 <div class="card">
-  <div class="card-title">
-    <span class="step-badge" id="badge1">1</span>
-    Conexión con extensión DIAN
-  </div>
-  <div id="alertExt" class="alert alert-info">
-    <span>🔌</span><div>Buscando extensión DIAN Extractor...</div>
-  </div>
+  <div class="card-title"><span class="step-badge" id="badge1">1</span> Conexión con extensión DIAN</div>
+  <div id="alertExt" class="alert alert-info"><span>🔌</span><div>Buscando extensión DIAN Extractor...</div></div>
   <div id="estadoExt"></div>
 </div>
 
-<!-- ── PASO 2: FILTROS ── -->
 <div class="card" id="stepFiltros">
   <div class="card-title"><span class="step-badge">2</span> Período y documentos</div>
   <div class="grid-2">
-    <div class="form-group">
-      <label class="form-label">Fecha desde</label>
-      <input type="date" id="fechaDesde">
-    </div>
-    <div class="form-group">
-      <label class="form-label">Fecha hasta</label>
-      <input type="date" id="fechaHasta">
-    </div>
+    <div class="form-group"><label class="form-label">Fecha desde</label><input type="date" id="fechaDesde"></div>
+    <div class="form-group"><label class="form-label">Fecha hasta</label><input type="date" id="fechaHasta"></div>
   </div>
   <div class="form-group">
     <label class="form-label">Documentos a procesar</label>
@@ -113,7 +99,6 @@ input[type=date]:focus{border-color:#2c5282;background:white}
   <button class="btn btn-primary" id="btnDescargar">⬇️ Iniciar descarga y procesamiento</button>
 </div>
 
-<!-- ── PASO 3: RESULTADOS ── -->
 <div id="stepResultados">
 <div class="card">
   <div class="card-title"><span class="step-badge">3</span> Progreso y resultados</div>
@@ -137,7 +122,7 @@ input[type=date]:focus{border-color:#2c5282;background:white}
   </div>
   <div id="downloadSec" style="display:none;margin-top:1.5rem;padding-top:1.25rem;border-top:1px solid #e2e8f0">
     <button class="btn btn-success" id="btnExcel">📊 Generar y descargar Excel</button>
-    <div style="font-size:11px;color:#a0aec0;margin-top:6px">4 hojas: Emitidas · Recibidas · Nómina Electrónica · Application Response</div>
+    <div style="font-size:11px;color:#a0aec0;margin-top:6px">4 hojas: Emitidas · Recibidas · Nómina · Application Response</div>
     <div id="excelResult"></div>
   </div>
 </div>
@@ -146,23 +131,91 @@ input[type=date]:focus{border-color:#2c5282;background:white}
 </div>
 
 <script>
-// ── Config ─────────────────────────────────────────────────────
-// ID de la extensión — se obtiene automáticamente del manifest
-// Chrome lo asigna al instalar. Lo detectamos via try/catch.
-let EXT_ID = null;
+// ── Estado ─────────────────────────────────────────────────────
+let extensionLista = false;
 let cookies = null;
 let datosEmitidas=[], datosRecibidas=[], datosNomina=[], datosAR=[];
 let tipoSeleccionado = 'ambos';
+let pendingRequests = {};
+let reqCounter = 0;
 
 // Fechas por defecto
 const hoy = new Date();
-const primerDia = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
-document.getElementById('fechaDesde').value = primerDia.toISOString().split('T')[0];
+document.getElementById('fechaDesde').value = new Date(hoy.getFullYear(),hoy.getMonth(),1).toISOString().split('T')[0];
 document.getElementById('fechaHasta').value = hoy.toISOString().split('T')[0];
 
-// ── Eventos ────────────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', () => {
-  // Radios
+// ── Comunicación con la extensión via postMessage ──────────────
+window.addEventListener('message', (event) => {
+  if (event.source !== window) return;
+  if (!event.data || event.data.target !== 'DIAN_PAGE') return;
+
+  const { action, requestId, success, data, error, extId } = event.data;
+
+  // Extensión lista
+  if (action === 'EXTENSION_READY') {
+    extensionLista = true;
+    onExtensionReady();
+    return;
+  }
+
+  // Respuesta a una petición pendiente
+  if (requestId && pendingRequests[requestId]) {
+    const { resolve, reject } = pendingRequests[requestId];
+    delete pendingRequests[requestId];
+    if (success) resolve(data);
+    else reject(new Error(error || 'Error desconocido'));
+  }
+});
+
+function enviarExtension(action, payload = {}) {
+  return new Promise((resolve, reject) => {
+    const requestId = 'req_' + (++reqCounter);
+    pendingRequests[requestId] = { resolve, reject };
+
+    // Timeout de 30 segundos
+    const timeout = setTimeout(() => {
+      delete pendingRequests[requestId];
+      reject(new Error('Timeout — la extensión no respondió'));
+    }, 30000);
+
+    const originalResolve = resolve;
+    pendingRequests[requestId].resolve = (data) => {
+      clearTimeout(timeout);
+      originalResolve(data);
+    };
+    pendingRequests[requestId].reject = (err) => {
+      clearTimeout(timeout);
+      reject(err);
+    };
+
+    window.postMessage({ target: 'DIAN_EXTENSION', requestId, action, payload }, '*');
+  });
+}
+
+// ── Al cargar ──────────────────────────────────────────────────
+window.addEventListener('load', () => {
+  // Leer cookies del parámetro ?session=
+  const params = new URLSearchParams(window.location.search);
+  const sessionParam = params.get('session');
+  if (sessionParam) {
+    try {
+      cookies = JSON.parse(decodeURIComponent(escape(atob(sessionParam))));
+    } catch(e) {}
+  }
+
+  // Esperar 1.5s a que el content script inyecte el puente
+  setTimeout(() => {
+    if (!extensionLista) {
+      // Si tenemos cookies pero no extensión, mostrar advertencia
+      if (cookies) {
+        mostrarAdvertenciaExtension();
+      } else {
+        mostrarErrorExtension();
+      }
+    }
+  }, 1500);
+
+  // Eventos
   ['rb-ambos','rb-enviados','rb-recibidos'].forEach(id => {
     document.getElementById(id).addEventListener('click', () => {
       ['rb-ambos','rb-enviados','rb-recibidos'].forEach(i => document.getElementById(i).classList.remove('on'));
@@ -170,164 +223,44 @@ document.addEventListener('DOMContentLoaded', () => {
       tipoSeleccionado = document.getElementById(id).querySelector('input').value;
     });
   });
-
-  // Tabs
-  ['emitidas','recibidas','nomina','ar'].forEach(nombre => {
-    document.getElementById('tab-'+nombre).addEventListener('click', () => showTab(nombre));
+  ['emitidas','recibidas','nomina','ar'].forEach(n => {
+    document.getElementById('tab-'+n).addEventListener('click', () => showTab(n));
   });
-
-  // Botones
   document.getElementById('btnDescargar').addEventListener('click', iniciarDescarga);
   document.getElementById('btnExcel').addEventListener('click', generarExcel);
-
-  // Iniciar detección de extensión
-  iniciarConexion();
 });
 
-// ── Conexión con la extensión ──────────────────────────────────
-async function iniciarConexion() {
+function onExtensionReady() {
   const alertEl = document.getElementById('alertExt');
-  const estadoEl = document.getElementById('estadoExt');
-
-  // Leer cookies del parámetro ?session= en la URL
-  const params = new URLSearchParams(window.location.search);
-  const sessionParam = params.get('session');
-  
-  if (sessionParam) {
-    try {
-      cookies = JSON.parse(decodeURIComponent(escape(atob(sessionParam))));
-      log('Cookies recibidas desde la extensión', 'ok');
-    } catch(e) {
-      log('Error decodificando cookies de la URL', 'err');
-    }
-  }
-
-  // Intentar conectar con la extensión para hacer fetches
-  // Probamos IDs comunes o buscamos en la URL
-  const extIds = await detectarExtension();
-
-  if (extIds) {
-    EXT_ID = extIds;
-    alertEl.className = 'alert alert-ok';
-    alertEl.innerHTML = '<span>✅</span><div><strong>Extensión conectada y sesión DIAN activa</strong><br>Las peticiones van directo al portal DIAN a través de la extensión.</div>';
-    document.getElementById('badge1').classList.add('ok');
-
-    estadoEl.innerHTML = `
-      <div style="display:flex;gap:8px;margin-top:4px">
-        <button class="btn btn-outline" id="btnActSesion" style="font-size:12px;padding:7px 14px">🔄 Actualizar sesión</button>
-      </div>`;
-    document.getElementById('btnActSesion').addEventListener('click', iniciarConexion);
-    document.getElementById('stepFiltros').style.display = 'block';
-
-  } else if (cookies) {
-    // Tenemos cookies pero no podemos comunicarnos con la extensión
-    // Intentaremos fetch directo (puede fallar por CORS)
-    alertEl.className = 'alert alert-warn';
-    alertEl.innerHTML = '<span>⚠️</span><div><strong>Cookies recibidas pero extensión no alcanzable</strong><br>Reinstala la extensión y vuelve a abrir desde el ícono DIAN.</div>';
-    document.getElementById('stepFiltros').style.display = 'block';
-
-  } else {
-    alertEl.className = 'alert alert-err';
-    alertEl.innerHTML = `
-      <span>❌</span>
-      <div>
-        <strong>Extensión no detectada</strong><br>
-        Instala la extensión DIAN Extractor, inicia sesión en el portal DIAN y haz clic en el ícono naranja D para abrir esta app.
-      </div>`;
-  }
-}
-
-async function detectarExtension() {
-  // Intentar comunicarse con la extensión usando el ID del manifest
-  // Chrome asigna el ID basado en la clave del desarrollador
-  // Para extensiones no publicadas en modo dev, el ID cambia
-  // Lo intentamos desde el parámetro de la URL o por broadcast
-  
-  return new Promise(resolve => {
-    // Timeout de 2 segundos
-    const timeout = setTimeout(() => resolve(null), 2000);
-    
-    try {
-      // Si chrome.runtime está disponible y hay extensión conectada
-      if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
-        // La extensión inyecta su ID en window cuando está activa
-        if (window.__DIAN_EXT_ID__) {
-          clearTimeout(timeout);
-          resolve(window.__DIAN_EXT_ID__);
-          return;
-        }
-      }
-    } catch(e) {}
-    
-    // Si tenemos cookies en la URL, funcionamos sin conexión directa
-    if (cookies) {
-      clearTimeout(timeout);
-      resolve('url-cookies');
-    }
+  alertEl.className = 'alert alert-ok';
+  alertEl.innerHTML = '<span>✅</span><div><strong>Extensión conectada — Sesión DIAN activa</strong><br>Las peticiones van directo al portal DIAN a través de la extensión.</div>';
+  document.getElementById('badge1').classList.add('ok');
+  document.getElementById('estadoExt').innerHTML = `
+    <button class="btn btn-outline" id="btnActSesion" style="font-size:12px;padding:7px 14px;margin-top:4px">🔄 Actualizar sesión</button>`;
+  document.getElementById('btnActSesion').addEventListener('click', () => {
+    alertEl.className = 'alert alert-info';
+    alertEl.innerHTML = '<span>🔌</span><div>Recargando cookies...</div>';
+    setTimeout(onExtensionReady, 500);
   });
+  document.getElementById('stepFiltros').style.display = 'block';
 }
 
-// ── Enviar mensaje a la extensión ──────────────────────────────
-function mensajeExtension(extId, mensaje) {
-  return new Promise((resolve, reject) => {
-    if (!extId || extId === 'url-cookies') {
-      reject(new Error('Sin conexión directa a extensión'));
-      return;
-    }
-    try {
-      chrome.runtime.sendMessage(extId, mensaje, response => {
-        if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
-        else resolve(response);
-      });
-    } catch(e) { reject(e); }
-  });
+function mostrarAdvertenciaExtension() {
+  document.getElementById('alertExt').className = 'alert alert-warn';
+  document.getElementById('alertExt').innerHTML = '<span>⚠️</span><div><strong>Extensión no detectada en esta pestaña</strong><br>Cierra esta pestaña, ve al portal DIAN y haz clic en el ícono naranja D para reabrir la app correctamente.</div>';
 }
 
-// ── Fetch via extensión o directo ──────────────────────────────
+function mostrarErrorExtension() {
+  document.getElementById('alertExt').className = 'alert alert-err';
+  document.getElementById('alertExt').innerHTML = '<span>❌</span><div><strong>Extensión no instalada</strong><br>Instala la extensión DIAN Extractor, inicia sesión en el portal DIAN y haz clic en el ícono naranja D.</div>';
+}
+
+// ── Fetch via extensión ────────────────────────────────────────
 async function dianFetch(path, options = {}) {
-  // Intentar via extensión primero
-  if (EXT_ID && EXT_ID !== 'url-cookies') {
-    try {
-      const resp = await mensajeExtension(EXT_ID, {
-        action: 'fetchDian',
-        path,
-        options,
-        cookies
-      });
-      if (resp.success) return resp.data;
-      throw new Error(resp.error);
-    } catch(e) {
-      log('Extensión no respondió, intentando directo...', 'warn');
-    }
-  }
-
-  // Fallback: fetch directo (puede fallar por CORS en algunos navegadores)
-  const cookieHeader = cookies ? Object.entries(cookies).map(([k,v])=>`${k}=${v}`).join('; ') : '';
-  const headers = {
-    'Accept': 'text/html,application/xhtml+xml,*/*;q=0.8',
-    'Accept-Language': 'es-419,es;q=0.9',
-    'Cookie': cookieHeader,
-    ...(options.headers || {})
-  };
-
-  const resp = await fetch('https://catalogo-vpfe.dian.gov.co' + path, {
-    method: options.method || 'GET',
-    headers,
-    credentials: 'include',
-    body: options.body
-  });
-
-  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-
-  const ct = resp.headers.get('content-type') || '';
-  if (ct.includes('application/zip')) {
-    const buf = await resp.arrayBuffer();
-    const bytes = new Uint8Array(buf);
-    let bin = ''; bytes.forEach(b => bin += String.fromCharCode(b));
-    return { type: 'zip', data: btoa(bin) };
-  }
-  const text = await resp.text();
-  return { type: 'html', data: text };
+  const resp = await enviarExtension('fetchDian', { path, options, cookies });
+  if (!resp || resp.error) throw new Error(resp?.error || 'Sin respuesta de extensión');
+  if (!resp.success) throw new Error(resp.error || 'Error en fetch');
+  return resp.data;
 }
 
 // ── Helpers ────────────────────────────────────────────────────
@@ -343,56 +276,43 @@ function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g
 function setP(p,t){document.getElementById('progBar').style.width=p+'%';document.getElementById('progTxt').textContent=t;}
 function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
 function toFecha(d,ini=true){const[y,m,dd]=d.split('-');return `${+m}/${+dd}/${y} ${ini?'12:00:00 AM':'11:59:59 PM'}`;}
+function extraerTrackIds(html){return[...new Set([...html.matchAll(/DownloadZipFiles\?trackId=([a-fA-F0-9]{64,})/g)].map(m=>m[1]))];}
 
-// ── Extraer trackIds del HTML ──────────────────────────────────
-function extraerTrackIds(html) {
-  const matches = [...html.matchAll(/DownloadZipFiles\?trackId=([a-fA-F0-9]{64,})/g)];
-  return [...new Set(matches.map(m => m[1]))];
-}
-
-// ── Extraer XML del ZIP base64 ─────────────────────────────────
 function extraerXML(base64) {
   try {
-    const binary = atob(base64);
-    const bytes = new Uint8Array(binary.length);
-    for(let i=0;i<binary.length;i++) bytes[i]=binary.charCodeAt(i);
-    
-    let pos = 0;
-    while (pos < bytes.length - 4) {
+    const bin = atob(base64);
+    const bytes = new Uint8Array(bin.length);
+    for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
+    let pos=0;
+    while(pos<bytes.length-4){
       if(bytes[pos]===0x50&&bytes[pos+1]===0x4B&&bytes[pos+2]===0x03&&bytes[pos+3]===0x04){
-        const compression = bytes[pos+8]|(bytes[pos+9]<<8);
-        const compSize = bytes[pos+18]|(bytes[pos+19]<<8)|(bytes[pos+20]<<16)|(bytes[pos+21]<<24);
-        const fnLen = bytes[pos+26]|(bytes[pos+27]<<8);
-        const extLen = bytes[pos+28]|(bytes[pos+29]<<8);
-        const fnStart = pos+30;
-        const fname = new TextDecoder().decode(bytes.slice(fnStart,fnStart+fnLen));
-        const dataStart = fnStart+fnLen+extLen;
-        if(fname.endsWith('.xml')&&compression===0){
-          return new TextDecoder('utf-8').decode(bytes.slice(dataStart,dataStart+compSize));
-        }
-        pos = dataStart+compSize;
-      } else { pos++; }
+        const comp=bytes[pos+8]|(bytes[pos+9]<<8);
+        const csz=bytes[pos+18]|(bytes[pos+19]<<8)|(bytes[pos+20]<<16)|(bytes[pos+21]<<24);
+        const fnl=bytes[pos+26]|(bytes[pos+27]<<8);
+        const exl=bytes[pos+28]|(bytes[pos+29]<<8);
+        const fns=pos+30;
+        const fname=new TextDecoder().decode(bytes.slice(fns,fns+fnl));
+        const ds=fns+fnl+exl;
+        if(fname.endsWith('.xml')&&comp===0) return new TextDecoder('utf-8').decode(bytes.slice(ds,ds+csz));
+        pos=ds+csz;
+      } else pos++;
     }
-  } catch(e) {}
+  } catch(e){}
   return null;
 }
 
-// ── Parser XML ─────────────────────────────────────────────────
 function parsearXML(xmlStr, esEmitida) {
   try {
     const doc = new DOMParser().parseFromString(xmlStr,'application/xml');
-    const get = tag => { for(const el of doc.getElementsByTagName('*')) if(el.localName===tag&&el.textContent) return el.textContent.trim(); return ''; };
-
-    const id=get('ID'); const m=id.match(/^([A-Za-z]+)(\d+)$/);
+    const get = tag=>{for(const el of doc.getElementsByTagName('*'))if(el.localName===tag&&el.textContent)return el.textContent.trim();return '';};
+    const id=get('ID');const m=id.match(/^([A-Za-z]+)(\d+)$/);
     const tipoCod=get('InvoiceTypeCode')||get('CreditNoteTypeCode')||get('DebitNoteTypeCode');
     const tipoMap={'01':'Factura de Venta','03':'Contingencia','91':'Nota Crédito','92':'Nota Débito','96':'Application Response','102':'Nómina Electrónica'};
-
-    let supNIT='',supNom='',cusNIT='',cusNom='';
+    let sN='',sNom='',cN='',cNom='';
     for(const el of doc.getElementsByTagName('*')){
-      if(el.localName==='AccountingSupplierParty'){for(const c of el.getElementsByTagName('*')){if(c.localName==='CompanyID')supNIT=c.textContent.trim();if(c.localName==='RegistrationName')supNom=c.textContent.trim();}}
-      if(el.localName==='AccountingCustomerParty'){for(const c of el.getElementsByTagName('*')){if(c.localName==='CompanyID')cusNIT=c.textContent.trim();if(c.localName==='RegistrationName')cusNom=c.textContent.trim();}}
+      if(el.localName==='AccountingSupplierParty'){for(const c of el.getElementsByTagName('*')){if(c.localName==='CompanyID')sN=c.textContent.trim();if(c.localName==='RegistrationName')sNom=c.textContent.trim();}}
+      if(el.localName==='AccountingCustomerParty'){for(const c of el.getElementsByTagName('*')){if(c.localName==='CompanyID')cN=c.textContent.trim();if(c.localName==='RegistrationName')cNom=c.textContent.trim();}}
     }
-
     let iva19=0,iva5=0,otros=0;
     for(const tax of doc.getElementsByTagName('*')){
       if(tax.localName!=='TaxTotal')continue;
@@ -406,33 +326,31 @@ function parsearXML(xmlStr, esEmitida) {
       else if(pct===5)iva5+=amt;
       else if(amt>0)otros+=amt;
     }
-
     const total=parseFloat(get('PayableAmount'))||0;
     return {
-      es_nomina:tipoCod==='102', es_ar:tipoCod==='96',
+      es_nomina:tipoCod==='102',es_ar:tipoCod==='96',
       tipo_desc:tipoMap[tipoCod]||`Tipo ${tipoCod}`,
       fecha_emision:get('IssueDate'),
-      prefijo:m?m[1]:'', folio:m?m[2]:id,
+      prefijo:m?m[1]:'',folio:m?m[2]:id,
       tipo_pago:get('PaymentMeansCode')==='2'?'Crédito':'Contado',
-      nit:esEmitida?cusNIT:supNIT, nombre:esEmitida?cusNom:supNom,
+      nit:esEmitida?cN:sN,nombre:esEmitida?cNom:sNom,
       subtotal:+(total-iva19-iva5-otros).toFixed(2),
-      iva_19:+iva19.toFixed(2), iva_5:+iva5.toFixed(2),
-      otros_impuestos:+otros.toFixed(2), total:+total.toFixed(2),
+      iva_19:+iva19.toFixed(2),iva_5:+iva5.toFixed(2),
+      otros_impuestos:+otros.toFixed(2),total:+total.toFixed(2),
       cufe:get('UUID')
     };
-  } catch(e){return null;}
+  }catch(e){return null;}
 }
 
 // ── Proceso principal ──────────────────────────────────────────
 async function iniciarDescarga() {
-  if(!cookies){alert('No hay sesión DIAN. Abre la app desde el ícono de la extensión.');return;}
+  if(!extensionLista){alert('La extensión no está activa. Cierra esta pestaña y abre la app desde el ícono DIAN.');return;}
   const desde=document.getElementById('fechaDesde').value;
   const hasta=document.getElementById('fechaHasta').value;
   if(!desde||!hasta){alert('Selecciona el rango de fechas');return;}
 
   const btn=document.getElementById('btnDescargar');
-  btn.disabled=true; btn.innerHTML='<span class="spinner"></span> Procesando...';
-
+  btn.disabled=true;btn.innerHTML='<span class="spinner"></span> Procesando...';
   datosEmitidas=[];datosRecibidas=[];datosNomina=[];datosAR=[];
   document.getElementById('stepResultados').style.display='block';
   document.getElementById('previewSec').style.display='none';
@@ -440,68 +358,55 @@ async function iniciarDescarga() {
   document.getElementById('logBox').innerHTML='';
   ['stTotal','stEmit','stRecib','stErr'].forEach(id=>document.getElementById(id).textContent='0');
 
-  const fDesde=toFecha(desde,true), fHasta=toFecha(hasta,false);
+  const fD=toFecha(desde,true),fH=toFecha(hasta,false);
   log(`Período: ${desde} → ${hasta}`,'info');
-  setP(5,'Conectando con el portal DIAN...');
+  setP(5,'Conectando con el portal DIAN via extensión...');
 
-  async function procesarTipo(tipo, esEmitida) {
+  async function procesarTipo(tipo,esEmitida){
     log(`Consultando documentos ${tipo}...`,'info');
-    try {
-      // Construir form data como string URL-encoded
-      const params = new URLSearchParams();
-      params.append('__RequestVerificationToken', cookies['__RequestVerificationToken']||'');
-      params.append('Page','0');
-      params.append('StartDate',fDesde);
-      params.append('EndDate',fHasta);
-      params.append('DocumentKey','');
-      params.append('SerieAndNumber','');
-      params.append('ReceiverCode','');
-      params.append('DocumentTypeId','00');
-      params.append('Status','0');
-      params.append('RadianStatus','0');
-      params.append('ReferencesType','00');
+    try{
+      const params=new URLSearchParams();
+      params.append('__RequestVerificationToken',cookies?.['__RequestVerificationToken']||'');
+      params.append('Page','0');params.append('StartDate',fD);params.append('EndDate',fH);
+      params.append('DocumentKey','');params.append('SerieAndNumber','');params.append('ReceiverCode','');
+      params.append('DocumentTypeId','00');params.append('Status','0');
+      params.append('RadianStatus','0');params.append('ReferencesType','00');
 
-      const endpoint = tipo==='enviados' ? '/Document/Sent' : '/Document/Received';
-      const respuesta = await dianFetch(endpoint, {
-        method: 'POST',
-        body: params.toString(),
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+      const endpoint=tipo==='enviados'?'/Document/Sent':'/Document/Received';
+      const respuesta=await dianFetch(endpoint,{
+        method:'POST',body:params.toString(),
+        headers:{'Content-Type':'application/x-www-form-urlencoded'}
       });
 
-      if(!respuesta||!respuesta.data){
-        log(`No se recibió respuesta para ${tipo}`,'err'); return;
+      if(!respuesta?.data){log(`Sin respuesta para ${tipo}`,'err');return;}
+      if(respuesta.data.includes('SESION_EXPIRADA')){
+        log('⚠️ Sesión expirada — inicia sesión en la DIAN y abre la app desde la extensión','err');return;
       }
 
-      if(respuesta.data.includes('SESION_EXPIRADA')||respuesta.data.includes('Login')){
-        log('⚠️ Sesión DIAN expirada — vuelve al portal y reinicia desde la extensión','err'); return;
-      }
+      const trackIds=extraerTrackIds(respuesta.data);
+      log(`✓ ${trackIds.length} documentos en ${tipo}`,'ok');
 
-      const trackIds = extraerTrackIds(respuesta.data);
-      log(`✓ ${trackIds.length} documentos encontrados en ${tipo}`,'ok');
-
-      let proc=0, errores=0;
-      for(const trackId of trackIds){
+      let proc=0,errs=0;
+      for(const tid of trackIds){
         proc++;
-        const pct = tipo==='enviados' ? (proc/trackIds.length)*40+5 : (proc/trackIds.length)*40+50;
+        const pct=tipo==='enviados'?(proc/Math.max(trackIds.length,1))*40+5:(proc/Math.max(trackIds.length,1))*40+50;
         setP(pct,`Procesando ${tipo}: ${proc}/${trackIds.length}`);
-        try {
-          const zipResp = await dianFetch(`/Document/DownloadZipFiles?trackId=${trackId}`);
-          if(!zipResp||zipResp.type!=='zip'){errores++;continue;}
-          const xmlStr = extraerXML(zipResp.data);
-          if(!xmlStr){errores++;continue;}
-          const doc = parsearXML(xmlStr, esEmitida);
-          if(!doc){errores++;continue;}
-          if(doc.es_nomina) datosNomina.push(doc);
-          else if(doc.es_ar) datosAR.push(doc);
-          else if(esEmitida) datosEmitidas.push(doc);
+        try{
+          const zipResp=await dianFetch(`/Document/DownloadZipFiles?trackId=${tid}`);
+          if(!zipResp||zipResp.type!=='zip'){errs++;continue;}
+          const xmlStr=extraerXML(zipResp.data);
+          if(!xmlStr){errs++;continue;}
+          const doc=parsearXML(xmlStr,esEmitida);
+          if(!doc){errs++;continue;}
+          if(doc.es_nomina)datosNomina.push(doc);
+          else if(doc.es_ar)datosAR.push(doc);
+          else if(esEmitida)datosEmitidas.push(doc);
           else datosRecibidas.push(doc);
-        } catch(e){errores++;}
-        await sleep(200);
+        }catch(e){errs++;log(`Error doc: ${e.message}`,'warn');}
+        await sleep(300);
       }
-      log(`✓ Procesados: ${proc-errores} ok, ${errores} errores en ${tipo}`,'ok');
-    } catch(e){
-      log(`Error en ${tipo}: ${e.message}`,'err');
-    }
+      log(`✓ ${proc-errs} ok · ${errs} errores en ${tipo}`,'ok');
+    }catch(e){log(`Error en ${tipo}: ${e.message}`,'err');}
   }
 
   if(tipoSeleccionado==='enviados'||tipoSeleccionado==='ambos') await procesarTipo('enviados',true);
@@ -520,7 +425,7 @@ async function iniciarDescarga() {
     document.getElementById('downloadSec').style.display='block';
     showTab('emitidas');
   }
-  btn.disabled=false; btn.innerHTML='🔄 Volver a descargar';
+  btn.disabled=false;btn.innerHTML='🔄 Volver a descargar';
 }
 
 // ── Vista previa ───────────────────────────────────────────────
@@ -533,9 +438,8 @@ function showTab(nombre){
   const cols=Object.keys(datos[0]).filter(k=>!excl.includes(k));
   let html='<table class="data-table"><thead><tr>'+cols.map(c=>`<th>${esc(c)}</th>`).join('')+'</tr></thead><tbody>';
   datos.slice(0,30).forEach(r=>{html+='<tr>'+cols.map(c=>`<td>${esc(String(r[c]??''))}</td>`).join('')+'</tr>';});
-  if(datos.length>30)html+=`<tr><td colspan="${cols.length}" style="text-align:center;color:#718096;padding:10px;font-size:12px">… y ${datos.length-30} más en el Excel</td></tr>`;
-  html+='</tbody></table>';
-  cont.innerHTML=html;
+  if(datos.length>30)html+=`<tr><td colspan="${cols.length}" style="text-align:center;color:#718096;padding:10px;font-size:12px">…y ${datos.length-30} más en Excel</td></tr>`;
+  html+='</tbody></table>';cont.innerHTML=html;
 }
 
 // ── Excel ──────────────────────────────────────────────────────
@@ -549,15 +453,13 @@ function generarExcel(){
     const lbls=['Fecha Emisión','Prefijo','Folio','Tipo Pago','NIT','Nombre','Subtotal','IVA 19%','IVA 5%','Otros Impuestos','Total','CUFE','Tipo Documento'];
     const anch=[12,10,10,10,14,34,14,12,12,14,14,30,18];
     function addS(datos,nombre){
-      let ws;
-      if(!datos?.length){ws=XLSX.utils.aoa_to_sheet([['Sin datos para el período']]);}
-      else{ws=XLSX.utils.aoa_to_sheet([lbls,...datos.map(r=>hdrs.map(k=>r[k]??''))]);ws['!cols']=anch.map(w=>({wch:w}));}
+      let ws=!datos?.length?XLSX.utils.aoa_to_sheet([['Sin datos']]):(()=>{const w=XLSX.utils.aoa_to_sheet([lbls,...datos.map(r=>hdrs.map(k=>r[k]??''))]);w['!cols']=anch.map(w=>({wch:w}));return w;})();
       XLSX.utils.book_append_sheet(wb,ws,nombre);
     }
     addS(datosEmitidas,'Emitidas');addS(datosRecibidas,'Recibidas');
     datosNomina.length?XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(datosNomina),'Nómina Electrónica'):addS([],'Nómina Electrónica');
     datosAR.length?XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(datosAR),'Application Response'):addS([],'Application Response');
-    const desde=document.getElementById('fechaDesde').value, hasta=document.getElementById('fechaHasta').value;
+    const desde=document.getElementById('fechaDesde').value,hasta=document.getElementById('fechaHasta').value;
     const fn=`Facturas_DIAN_${desde}_${hasta}.xlsx`;
     XLSX.writeFile(wb,fn);
     document.getElementById('excelResult').innerHTML=`<div style="background:#f0fff4;border:1.5px solid #9ae6b4;border-radius:10px;padding:1.25rem;margin-top:1rem"><p style="font-size:14px;font-weight:600;color:#22543d;margin-bottom:.5rem">✅ Excel descargado</p><p style="font-size:13px;color:#276749">📁 <strong>${esc(fn)}</strong><br>Emitidas: ${datosEmitidas.length} · Recibidas: ${datosRecibidas.length} · Nómina: ${datosNomina.length} · AR: ${datosAR.length}</p></div>`;

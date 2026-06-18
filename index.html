@@ -363,28 +363,42 @@ async function iniciarDescarga() {
   log(`Período: ${desde} → ${hasta}`,'info');
   setP(5,'Conectando con el portal DIAN via extensión...');
 
-  async function procesarTipo(tipo,esEmitida){
-    log(`Consultando documentos ${tipo}...`,'info');
-    try{
+  async function obtenerTrackIds(endpoint,tipo){
+    const vistos=new Set();
+    let page=0;
+    const MAX_PAGINAS=80; // soporta miles de documentos aunque la DIAN pagine de pocos en pocos
+    while(page<MAX_PAGINAS){
       const params=new URLSearchParams();
       params.append('__RequestVerificationToken',cookies?.['__RequestVerificationToken']||'');
-      params.append('Page','0');params.append('StartDate',fD);params.append('EndDate',fH);
+      params.append('Page',String(page));params.append('StartDate',fD);params.append('EndDate',fH);
       params.append('DocumentKey','');params.append('SerieAndNumber','');params.append('ReceiverCode','');
       params.append('DocumentTypeId','00');params.append('Status','0');
       params.append('RadianStatus','0');params.append('ReferencesType','00');
 
-      const endpoint=tipo==='enviados'?'/Document/Sent':'/Document/Received';
       const respuesta=await dianFetch(endpoint,{
         method:'POST',body:params.toString(),
         headers:{'Content-Type':'application/x-www-form-urlencoded'}
       });
 
-      if(!respuesta?.data){log(`Sin respuesta para ${tipo}`,'err');return;}
-      if(respuesta.data.includes('SESION_EXPIRADA')){
-        log('⚠️ Sesión expirada — inicia sesión en la DIAN y abre la app desde la extensión','err');return;
-      }
+      if(!respuesta?.data){log(`Sin respuesta para ${tipo} (página ${page})`,'err');break;}
+      if(respuesta.data.includes('SESION_EXPIRADA')) throw new Error('SESION_EXPIRADA');
 
-      const trackIds=extraerTrackIds(respuesta.data);
+      const idsPagina=extraerTrackIds(respuesta.data);
+      const nuevos=idsPagina.filter(id=>!vistos.has(id));
+      if(idsPagina.length===0||nuevos.length===0) break; // no más páginas
+      nuevos.forEach(id=>vistos.add(id));
+      log(`  página ${page+1} de ${tipo}: ${nuevos.length} nuevos (acumulado ${vistos.size})`,'info');
+      page++;
+      await sleep(250);
+    }
+    return [...vistos];
+  }
+
+  async function procesarTipo(tipo,esEmitida){
+    log(`Consultando documentos ${tipo}...`,'info');
+    try{
+      const endpoint=tipo==='enviados'?'/Document/Sent':'/Document/Received';
+      const trackIds=await obtenerTrackIds(endpoint,tipo);
       log(`✓ ${trackIds.length} documentos en ${tipo}`,'ok');
 
       let proc=0,errs=0;
